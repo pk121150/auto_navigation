@@ -20,7 +20,7 @@
 
 using namespace std;
 
-int status;
+int status = 1;
 float now_x = 0,now_y = 0;
 float pre_x ,pre_y,dis,dis_pre;
 bool first = true,stuck = false;
@@ -33,7 +33,9 @@ double goalX[100],goalY[100],goalW[100];
 string map_frame_id;
 double stopWaitingTime;
 int clickNum = 0;
-geometry_msgs::PoseArray goalArray;
+geometry_msgs::PoseArray goalArray; 
+
+int last_status = 1;
 //float array[3][2] = {{14.866, -6.33 }, {32.31, 5.79 }, {4.36,  13.537 }};  //LAB
 
 //float array[3][2] = {{-8.99, 1.93 }, {-7.98, -2.67 }, {-4.66, -2.32 }};  //HOME
@@ -115,24 +117,29 @@ void clickCallback(geometry_msgs::PointStamped msg)
 
 
 
-void statusCallback(const std_msgs::String::ConstPtr& msg)
-{
-	if(strcmp (msg->data.c_str(),"idle") == 0){
-	//if(msg->data.c_str() == "idle")
-		status = 0;
-		arriveGoal = true;
-	}
-	else
-		status = 1;
+// void statusCallback(const std_msgs::String::ConstPtr& msg)
+// {
+// 	if(strcmp (msg->data.c_str(),"idle") == 0){
+// 	//if(msg->data.c_str() == "idle")
+// 		status = 0;
+// 		arriveGoal = true;
+// 	}
+// 	else
+// 		status = 1;
 
-	//cout<<status<<endl;
-}
+// 	//cout<<status<<endl;
+// }
 
 
 void statusCallback2(actionlib_msgs::GoalStatusArray msg)
 {
 	int a;
 	a = msg.status_list[0].status;
+	// for(int i = 0;i<msg.status_list.size();i++){
+	// 	int b = msg.status_list[i].status;	
+	// 	cout << b <<endl;
+	// }
+	// cout << endl; 
 	if((!first) && status == 1){
         
 		
@@ -146,6 +153,16 @@ void statusCallback2(actionlib_msgs::GoalStatusArray msg)
 
 		
 	}
+
+	if(msg.status_list.size() == 1)
+	{
+		if(last_status == 1 && a == 3)
+		{
+			arriveGoal = true;
+		}
+		last_status = a;
+	}
+		
 	
 			
 }
@@ -184,7 +201,7 @@ int main(int argc, char **argv)
 	ros::Publisher pub_goal = n.advertise<move_base_msgs::MoveBaseActionGoal>("/move_base/goal", 1000);
 	ros::Publisher pub_goalArray = n.advertise<geometry_msgs::PoseArray>("/goalArray", 1000);
 
-	ros::Subscriber sub  = n.subscribe("/cmd_vel_mux/active", 1000, statusCallback);
+	// ros::Subscriber sub  = n.subscribe("/cmd_vel_mux/active", 1000, statusCallback);
     ros::Subscriber sub2 = n.subscribe("/move_base/status", 1000, statusCallback2);
 	ros::Subscriber sub_click = n.subscribe("/clicked_point", 1000, clickCallback);
 
@@ -262,7 +279,8 @@ int main(int argc, char **argv)
 			}
 
 		}
-		pub_goalArray.publish(goalArray);
+		if(clickNum > 0)
+			pub_goalArray.publish(goalArray);
 		ros::spinOnce();
 		loop_rate.sleep();
 	}
