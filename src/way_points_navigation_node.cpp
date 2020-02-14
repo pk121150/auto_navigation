@@ -8,6 +8,8 @@
 
 #include "nav_msgs/Odometry.h"
 #include "nav_msgs/OccupancyGrid.h"
+#include "nav_msgs/GetPlan.h"
+#include "nav_msgs/Path.h" 
 
 #include "sensor_msgs/LaserScan.h"
 #include <sensor_msgs/Joy.h>
@@ -46,6 +48,7 @@ class Way_Points_Navigation
 public:
     Way_Points_Navigation()
     {
+        n.param<bool>("/way_points_navigation_node/soundOpen", soundOpen,false);
         n.param<string>("/way_points_navigation_node/map_frame_id", map_frame_id,"map");
         n.param<string>("/way_points_navigation_node/robot_frame_id", robot_frame_id,"base_footprint");
         n.param<double>("/way_points_navigation_node/stopWaitingTime", stopWaitingTime,2.0);
@@ -61,6 +64,11 @@ public:
 
         ROS_INFO("Parameters :");
         ROS_INFO("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
+        if( soundOpen)
+            ROS_INFO("soundOpen : true");
+        else{
+            ROS_INFO("soundOpen : false");
+        }
         ROS_INFO("map_frame_id : %s",map_frame_id.c_str());
         ROS_INFO("robot_frame_id, : %s",robot_frame_id.c_str());
         ROS_INFO("stopWaitingTime : %lf",stopWaitingTime);
@@ -87,6 +95,8 @@ public:
         cancelPub = n.advertise<actionlib_msgs::GoalID>("/move_base/cancel", 10);
         clickSub = n.subscribe("/clicked_point", 10, &Way_Points_Navigation::clickCallback,this);
         joySub = n.subscribe("/joy", 1, &Way_Points_Navigation::joyCallback,this);
+
+        pathClient = n.serviceClient<nav_msgs::GetPlan>("/move_base/make_plan");
 
         string package_path = ros::package::getPath("auto_navigation");
         path = package_path + "/path/way_points.dat";
@@ -203,6 +213,8 @@ public:
                                 startNavigation = false;
                                 nowLoopCount = 0;
                                 firstGoal = true;
+                                stop = false;
+                                sendStopCommand = false;
                                 continue;
                             }
                         }
@@ -426,36 +438,58 @@ public:
     }
 
     bool checkArrive(){
+        geometry_msgs::Pose nowPose;
+
+        if(!getNowPosition(nowPose)) 
+            return false;
+
+        double x_dis = goalList[nowGoal].position.x - nowPose.position.x;
+        double y_dis = goalList[nowGoal].position.y - nowPose.position.y;
+        double dis = pow(pow(x_dis,2)+pow(y_dis,2),0.5);
+
+        tf::Quaternion goal_tf(goalList[nowGoal].orientation.x,
+                               goalList[nowGoal].orientation.y,
+                               goalList[nowGoal].orientation.z,
+                               goalList[nowGoal].orientation.w);  
+        tf::Quaternion now_tf( nowPose.orientation.x,
+                               nowPose.orientation.y,
+                               nowPose.orientation.z,
+                               nowPose.orientation.w); 
+        double goal_yaw = tf::getYaw(goal_tf);
+        double now_yaw = tf::getYaw(now_tf);
+        double dYaw = abs(goal_yaw - now_yaw);
+        if(dYaw > M_PI)
+            dYaw = M_PI*2 - dYaw;  
+        //cout << dis <<" "<< dYaw<<" "<<dYaw/M_PI*180 <<endl;
+        if(dis < xy_goal_tolerance && dYaw < yaw_goal_tolerance)
+            return true;
+        else
+            return false;
+        
+    }
+
+    bool getNowPosition(geometry_msgs::Pose &nowPose){
+        
         tf::StampedTransform transform;
         try{
-            tfListener.waitForTransform(map_frame_id, robot_frame_id, ros::Time::now(), ros::Duration(0.1));
-            tfListener.lookupTransform(map_frame_id, robot_frame_id,  ros::Time::now(), transform);                         
+            // tfListener.waitForTransform(map_frame_id, robot_frame_id, ros::Time::now(), ros::Duration(0.1));
+            // tfListener.lookupTransform(map_frame_id, robot_frame_id,  ros::Time::now(), transform);        
+            tfListener.lookupTransform(map_frame_id, robot_frame_id,  ros::Time(0), transform);                     
         }
         catch (tf::TransformException ex){
             //ROS_WARN("Failed to compute transform from map_frame, to robot_frame, ignore pose assigned (%s)", ex.what());
             return false;
         }
 
-        double x_dis = goalList[nowGoal].position.x - transform.getOrigin().x();
-        double y_dis = goalList[nowGoal].position.y - transform.getOrigin().y();
-        double dis = pow(pow(x_dis,2)+pow(y_dis,2),0.5);
+        nowPose.position.x = transform.getOrigin().x();
+        nowPose.position.y = transform.getOrigin().y();
+        nowPose.position.z = transform.getOrigin().z();
+        nowPose.orientation.x = transform.getRotation().x();
+        nowPose.orientation.y = transform.getRotation().y();
+        nowPose.orientation.z = transform.getRotation().z();
+        nowPose.orientation.w = transform.getRotation().w();
 
-        tf::Quaternion goal_tf(goalList[nowGoal].orientation.x,
-                               goalList[nowGoal].orientation.y,
-                               goalList[nowGoal].orientation.z,
-                               goalList[nowGoal].orientation.w);
-        double goal_yaw = tf::getYaw(goal_tf);
-        double now_yaw = tf::getYaw(transform.getRotation());
-        double dYaw = abs(goal_yaw - now_yaw);
-        if(dYaw > M_PI)
-            dYaw = M_PI*2 - dYaw;
-        
-        //cout << dis <<" "<< dYaw<<" "<<dYaw/M_PI*180 <<endl;
-
-        if(dis < xy_goal_tolerance && dYaw < yaw_goal_tolerance)
-            return true;
-        else
-            return false;
+        return true;
     }
 
     void sendNextWayPoint(){
@@ -467,68 +501,63 @@ public:
     }
 
     void sendcancelCommand(){
-        // geometry_msgs::PoseStamped goal;
-
-        // while(!getNowPosition(goal)){
-        //     ros::Duration(0.1).sleep();
-        // }
-        // goalPub.publish(goal);
-
         actionlib_msgs::GoalID cancel_msg;
         cancelPub.publish(cancel_msg);    
     }
 
-    // bool getNowPosition(geometry_msgs::PoseStamped &nowPosition)
-    // {
-    //     tf::StampedTransform transform;
-    //     try{
-    //         tfListener.waitForTransform(map_frame_id, robot_frame_id, ros::Time::now(), ros::Duration(0.3));
-    //         tfListener.lookupTransform(map_frame_id, robot_frame_id,  ros::Time::now(), transform);                         
-    //     }
-    //     catch (tf::TransformException ex){
-    //         //ROS_WARN("Failed to compute transform from map_frame, to robot_frame, ignore pose assigned (%s)", ex.what());
-    //         return false;
-    //     }
+    bool getTargetPath(nav_msgs::Path& path, geometry_msgs::PoseStamped start, geometry_msgs::PoseStamped goal)
+    {
+        nav_msgs::GetPlan srv;
+        srv.request.start = start;
+        srv.request.goal = goal;
+        srv.request.tolerance = 0.0;
 
-    //     nowPosition.header.frame_id = "map";
-    //     nowPosition.pose.position.x = transform.getOrigin().x();
-    //     nowPosition.pose.position.y = transform.getOrigin().y();
-    //     nowPosition.pose.position.z = transform.getOrigin().z();
-    //     nowPosition.pose.orientation.x = transform.getRotation().x();
-    //     nowPosition.pose.orientation.y = transform.getRotation().y();
-    //     nowPosition.pose.orientation.z = transform.getRotation().z();
-    //     nowPosition.pose.orientation.w = transform.getRotation().w();
-
-    //     return true;
-    // }
+        if(pathClient.call(srv))
+        {
+            path = srv.response.plan;
+            return true;
+        }
+        else
+        {
+            ROS_ERROR("Failed to call service /move_base/make_plan");
+            return false;
+        }
+    } 
     
 
     void sendStartSound(){
-        sc.playWave(sound_path+"/start_to_perform_task.mp3");
+        if(soundOpen)
+            sc.playWave(sound_path+"/start_to_perform_task.mp3");
     }
 
     void sendPresentTargetArrivedSound(){
-        sc.playWave(sound_path+"/present_target_is_arrived.mp3");
+        if(soundOpen)
+            sc.playWave(sound_path+"/present_target_is_arrived.mp3");
     }
 
     void sendGoToNextTargetdSound(){
-        sc.playWave(sound_path+"/go_to_next_target.mp3");
+        if(soundOpen)
+            sc.playWave(sound_path+"/go_to_next_target.mp3");
     }
 
     void sendFinishAllTasksSound(){
-        sc.playWave(sound_path+"/finish_all_tasks.mp3");
+        if(soundOpen)
+            sc.playWave(sound_path+"/finish_all_tasks.mp3");
     }
 
     void sendPausePerformingTaskSound(){
-        sc.playWave(sound_path+"/pause_performing_task.mp3");
+        if(soundOpen)
+            sc.playWave(sound_path+"/pause_performing_task.mp3");
     }
 
     void sendContinueToPerformTaskSound(){
-        sc.playWave(sound_path+"/continue_to_perform_task.mp3");
+        if(soundOpen)
+            sc.playWave(sound_path+"/continue_to_perform_task.mp3");
     }
 
     void sendCancelTargetSound(){
-        sc.playWave(sound_path+"/cancel_target.mp3");
+        if(soundOpen)
+            sc.playWave(sound_path+"/cancel_target.mp3");
     }
 
     ros::NodeHandle n;
@@ -537,7 +566,7 @@ public:
     string map_frame_id,robot_frame_id;
     double stopWaitingTime,countDownTime,yaw_goal_tolerance,xy_goal_tolerance;
     int goalsNum,loop_count;
-    bool assign_new_navigation_points,startWithJoy;
+    bool assign_new_navigation_points,startWithJoy,soundOpen;
 
     std::vector<geometry_msgs::Pose> goalList;
 
@@ -565,6 +594,8 @@ public:
 
     string path;
     string sound_path;
+
+    ros::ServiceClient pathClient;
 };
 
 int main(int argc, char** argv)
