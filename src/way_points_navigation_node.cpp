@@ -190,7 +190,7 @@ public:
                     ROS_INFO("   GO TO FIRST GOAL !!");
                     sendNextWayPoint();
                 }else{
-                    arriveGoal = checkArrive();
+                    arriveGoal = checkArrive(goalList[nowGoal]);
 
                     if(arriveGoal || cancelGoal)
                     {
@@ -437,20 +437,20 @@ public:
         cout << WHITE ;
     }
 
-    bool checkArrive(){
+    bool checkArrive(geometry_msgs::Pose goal){
         geometry_msgs::Pose nowPose;
 
         if(!getNowPosition(nowPose)) 
             return false;
 
-        double x_dis = goalList[nowGoal].position.x - nowPose.position.x;
-        double y_dis = goalList[nowGoal].position.y - nowPose.position.y;
+        double x_dis = goal.position.x - nowPose.position.x;
+        double y_dis = goal.position.y - nowPose.position.y;
         double dis = pow(pow(x_dis,2)+pow(y_dis,2),0.5);
 
-        tf::Quaternion goal_tf(goalList[nowGoal].orientation.x,
-                               goalList[nowGoal].orientation.y,
-                               goalList[nowGoal].orientation.z,
-                               goalList[nowGoal].orientation.w);  
+        tf::Quaternion goal_tf(goal.orientation.x,
+                               goal.orientation.y,
+                               goal.orientation.z,
+                               goal.orientation.w);  
         tf::Quaternion now_tf( nowPose.orientation.x,
                                nowPose.orientation.y,
                                nowPose.orientation.z,
@@ -493,11 +493,31 @@ public:
     }
 
     void sendNextWayPoint(){
+        geometry_msgs::Pose nowPose;
+        nav_msgs::Path path;
+
+        bool getNowPose = getNowPosition(nowPose);
+        bool getPath = getTargetPath(path,nowPose,goalList[nowGoal]);
+
         geometry_msgs::PoseStamped goal;
         goal.header.frame_id = "map";
+        if(getPath){
+            goal.pose = path.poses[0].pose;
+            goalPub.publish(goal);
+
+            while(!checkArrive(goal.pose)){
+                ros::Duration(0.1).sleep();
+            }
+        }
         goal.pose = goalList[nowGoal];
 
         goalPub.publish(goal);
+
+        // geometry_msgs::PoseStamped goal;
+        // goal.header.frame_id = "map";
+        // goal.pose = goalList[nowGoal];
+
+        // goalPub.publish(goal);
     }
 
     void sendcancelCommand(){
@@ -505,11 +525,13 @@ public:
         cancelPub.publish(cancel_msg);    
     }
 
-    bool getTargetPath(nav_msgs::Path& path, geometry_msgs::PoseStamped start, geometry_msgs::PoseStamped goal)
+    bool getTargetPath(nav_msgs::Path& path, geometry_msgs::Pose start, geometry_msgs::Pose goal)
     {
         nav_msgs::GetPlan srv;
-        srv.request.start = start;
-        srv.request.goal = goal;
+        srv.request.start.pose = start;
+        srv.request.start.header.frame_id = map_frame_id;
+        srv.request.goal.pose = goal;
+        srv.request.goal.header.frame_id = map_frame_id;
         srv.request.tolerance = 0.0;
 
         if(pathClient.call(srv))
@@ -519,7 +541,7 @@ public:
         }
         else
         {
-            ROS_ERROR("Failed to call service /move_base/make_plan");
+            // ROS_ERROR("Failed to call service /move_base/make_plan");
             return false;
         }
     } 
