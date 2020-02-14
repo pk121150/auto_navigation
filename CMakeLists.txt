@@ -10,6 +10,7 @@ project(auto_navigation)
 find_package(catkin REQUIRED COMPONENTS
   actionlib
   actionlib_msgs
+  roslib
   geometry_msgs
   map_msgs
   move_base_msgs
@@ -208,3 +209,6 @@ include_directories(
 
 add_executable(go_rviz src/go_rviz.cpp)
 target_link_libraries(go_rviz ${catkin_LIBRARIES})
+
+add_executable(way_points_navigation_node src/way_points_navigation_node.cpp)
+target_link_libraries(way_points_navigation_node ${catkin_LIBRARIES})
