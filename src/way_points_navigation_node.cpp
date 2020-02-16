@@ -191,9 +191,28 @@ public:
             //go navigation
             if(getNavigationPoint && startNavigation){
                 if(firstGoal ){
-                    firstGoal = false;
-                    ROS_INFO("   GO TO FIRST GOAL !!");
-                    sendNextWayPoint(true);
+                
+                    bool success = sendNextWayPoint();
+
+                    if(stuck){
+                        if(!success){
+                            ;
+                        }else{
+                            stuck = false;
+                            firstGoal = false;
+                            ROS_INFO("   GO TO FIRST GOAL !!");
+                        }
+                    }else{
+                        if(!success){
+                            stuck = true;
+                            sendCanNotFindPathHelpMeSound();
+                            ros::Duration(1).sleep();
+                        }else{
+                            firstGoal = false;
+                            ROS_INFO("   GO TO FIRST GOAL !!");
+                        }
+                    }
+                       
                 }else{
                     arriveGoal = checkArrive(goalList[nowGoal],xy_goal_tolerance,yaw_goal_tolerance);
 
@@ -239,7 +258,7 @@ public:
                         if(!stop){
                             sendGoToNextTargetdSound();
                             ROS_INFO("   GO TO NEXT GOAL !!");
-                            sendNextWayPoint(true);
+                            sendNextWayPoint();
                         }
                         cancelGoal = false;
                     }else{
@@ -251,7 +270,7 @@ public:
                             }
                         }else{
                             if(sendStopCommand){
-                                sendNextWayPoint(true);
+                                sendNextWayPoint();
                                 sendStopCommand = false;
                             }
                         }
@@ -503,27 +522,25 @@ public:
         return true;
     }
 
-    void sendNextWayPoint(bool new_){
+    bool sendNextWayPoint(){
         geometry_msgs::Pose nowPose;
         nav_msgs::Path path;
 
         bool getNowPose = getNowPosition(nowPose);
         bool getPath = false;
-        if(new_){ 
-            double START,END;
-            START = clock();
-            getPath = getTargetPath(path,nowPose,goalList[nowGoal]);
-            END = clock();
-            ROS_INFO("Time for find path : %lf S",(END - START) / CLOCKS_PER_SEC);
-            if(getPath)
-                cout<<GREEN<<"getPath"<<WHITE<<endl;
-            else
-                cout<<RED<<"not getPath"<<WHITE<<endl;
+       
+        getPath = getTargetPath(path,nowPose,goalList[nowGoal]);
+            
+        if(getPath)
+            cout<<GREEN<<"getPath"<<WHITE<<endl;
+        else{
+            cout<<RED<<"not getPath"<<WHITE<<endl;
+            return false;
         }
         geometry_msgs::PoseStamped goal;
         goal.header.frame_id = "map";
-        if(getPath){
-            // goal.pose = path.poses[0].pose;
+        if(path.poses.size() > 0)
+        {
             goal.pose.position = nowPose.position;
             if(path.poses.size() > 2)
                 goal.pose.orientation = getOrientation(path.poses[0].pose,path.poses[2].pose);
@@ -538,16 +555,13 @@ public:
             }
              sendcancelCommand();
              ros::Duration(0.1).sleep();
+        }else{
+            return false;
         }
         goal.pose = goalList[nowGoal];
 
         goalPub.publish(goal);
 
-        // geometry_msgs::PoseStamped goal;
-        // goal.header.frame_id = "map";
-        // goal.pose = goalList[nowGoal];
-
-        // goalPub.publish(goal);
     }
 
     geometry_msgs::Quaternion getOrientation(geometry_msgs::Pose from,geometry_msgs::Pose to){
