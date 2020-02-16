@@ -97,7 +97,7 @@ public:
         goalNowPub = n.advertise<geometry_msgs::PoseStamped>("/goalNow", 10);
         cancelPub = n.advertise<actionlib_msgs::GoalID>("/move_base/cancel", 10);
         clickSub = n.subscribe("/clicked_point", 10, &Way_Points_Navigation::clickCallback,this);
-        joySub = n.subscribe("/joy", 0, &Way_Points_Navigation::joyCallback,this);
+        joySub = n.subscribe("/joy", 10, &Way_Points_Navigation::joyCallback,this);
 
         pathClient = n.serviceClient<nav_msgs::GetPlan>("/move_base/make_plan");
 
@@ -247,7 +247,7 @@ public:
                             }
                         }else{
                             if(sendStopCommand){
-                                sendNextWayPoint(false);
+                                sendNextWayPoint(true);
                                 sendStopCommand = false;
                             }
                         }
@@ -517,11 +517,22 @@ public:
         if(getPath){
             // goal.pose = path.poses[0].pose;
             goal.pose.position = nowPose.position;
-            goal.pose.orientation = getOrientation(path.poses[0].pose,path.poses[1].pose);
+            cout << path.poses.size() << endl;
+            if(path.poses.size() > 2){
+                
+
+                goal.pose.orientation = getOrientation(path.poses[0].pose,path.poses[2].pose);
+                cout << "test" <<endl;
+
+            }
+            else
+                goal.pose.orientation = path.poses[0].pose.orientation;
             goalPub.publish(goal);
 
-            while(!checkArrive(goal.pose,xy_goal_tolerance,yaw_goal_tolerance) && ros::ok()){
+            int count = 0; 
+            while(!checkArrive(goal.pose,xy_goal_tolerance,yaw_goal_tolerance) && ros::ok() && count < 50){
                 ros::Duration(0.1).sleep();
+                count++;
             }
              sendcancelCommand();
              ros::Duration(0.1).sleep();
