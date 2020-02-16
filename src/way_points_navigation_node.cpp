@@ -202,6 +202,7 @@ public:
                         if(arriveGoal){
                             ROS_INFO("   ARRIVE GOAL %d !!",nowGoal+1); 
                             sendcancelCommand();
+                            ros::Duration(0.1).sleep();
                         }
                         nowGoal++;
                         
@@ -213,6 +214,7 @@ public:
                             {
                                 if(cancelGoal){
                                     sendcancelCommand();
+                                    ros::Duration(0.1).sleep();
                                     cancelGoal = false;
                                 }
                                 sendFinishAllTasksSound();
@@ -245,8 +247,10 @@ public:
                         if(stop){
                             if(!sendStopCommand){
                                 sendcancelCommand();
+                                ros::Duration(0.1).sleep();
                                 sendStopCommand = true;
                             }
+                            stuck = false;
                         }else{
                             geometry_msgs::Pose nowPose;
                             if(!getNowPosition(nowPose)){
@@ -264,6 +268,11 @@ public:
                                     if(sendStopCommand)
                                         sendStopCommand = false;                       
                                     sendNextWayPoint(true);
+                                }else{
+                                    if(sendStopCommand){
+                                        sendStopCommand = false;                       
+                                        sendNextWayPoint(true);
+                                    }
                                 }
                                 
                             }else{
