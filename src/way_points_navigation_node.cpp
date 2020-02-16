@@ -89,12 +89,15 @@ public:
         ROS_INFO("yaw_goal_tolerance : %lf",yaw_goal_tolerance);
         ROS_INFO("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
 
+        testPub1 = n.advertise<geometry_msgs::PoseStamped>("/presentGoal", 10);
+        testPub2 = n.advertise<geometry_msgs::PoseStamped>("/presentRobot", 10);
+
         goalPub = n.advertise<geometry_msgs::PoseStamped>("/move_base_simple/goal", 10);
         goalArrayPub = n.advertise<geometry_msgs::PoseArray>("/goalArray", 10);
         goalNowPub = n.advertise<geometry_msgs::PoseStamped>("/goalNow", 10);
         cancelPub = n.advertise<actionlib_msgs::GoalID>("/move_base/cancel", 10);
         clickSub = n.subscribe("/clicked_point", 10, &Way_Points_Navigation::clickCallback,this);
-        joySub = n.subscribe("/joy", 1, &Way_Points_Navigation::joyCallback,this);
+        joySub = n.subscribe("/joy", 0, &Way_Points_Navigation::joyCallback,this);
 
         pathClient = n.serviceClient<nav_msgs::GetPlan>("/move_base/make_plan");
 
@@ -188,14 +191,16 @@ public:
                 if(firstGoal ){
                     firstGoal = false;
                     ROS_INFO("   GO TO FIRST GOAL !!");
-                    sendNextWayPoint();
+                    sendNextWayPoint(true);
                 }else{
-                    arriveGoal = checkArrive(goalList[nowGoal]);
+                    arriveGoal = checkArrive(goalList[nowGoal],xy_goal_tolerance,yaw_goal_tolerance);
 
                     if(arriveGoal || cancelGoal)
                     {
-                        if(arriveGoal)
+                        if(arriveGoal){
                             ROS_INFO("   ARRIVE GOAL %d !!",nowGoal+1); 
+                            sendcancelCommand();
+                        }
                         nowGoal++;
                         
                         if(nowGoal == goalsNum)
@@ -222,13 +227,15 @@ public:
                             sendPresentTargetArrivedSound();
                             ros::Duration(stopWaitingTime).sleep();
                         }
-                        if(cancelGoal)
+                        if(cancelGoal){
                             sendcancelCommand();
+                            ros::Duration(0.2).sleep();
+                        }
                     
                         if(!stop){
                             sendGoToNextTargetdSound();
-                            sendNextWayPoint();
                             ROS_INFO("   GO TO NEXT GOAL !!");
+                            sendNextWayPoint(true);
                         }
                         cancelGoal = false;
                     }else{
@@ -240,7 +247,7 @@ public:
                             }
                         }else{
                             if(sendStopCommand){
-                                sendNextWayPoint();
+                                sendNextWayPoint(false);
                                 sendStopCommand = false;
                             }
                         }
@@ -437,12 +444,12 @@ public:
         cout << WHITE ;
     }
 
-    bool checkArrive(geometry_msgs::Pose goal){
+    bool checkArrive(geometry_msgs::Pose goal, double xy_goal_tolerance_, double yaw_goal_tolerance_){
         geometry_msgs::Pose nowPose;
 
         if(!getNowPosition(nowPose)) 
             return false;
-
+        testPubPoint(nowPose,goal);
         double x_dis = goal.position.x - nowPose.position.x;
         double y_dis = goal.position.y - nowPose.position.y;
         double dis = pow(pow(x_dis,2)+pow(y_dis,2),0.5);
@@ -460,8 +467,8 @@ public:
         double dYaw = abs(goal_yaw - now_yaw);
         if(dYaw > M_PI)
             dYaw = M_PI*2 - dYaw;  
-        //cout << dis <<" "<< dYaw<<" "<<dYaw/M_PI*180 <<endl;
-        if(dis < xy_goal_tolerance && dYaw < yaw_goal_tolerance)
+        // cout << dis <<" "<< dYaw<<" "<<xy_goal_tolerance_<<" "<<yaw_goal_tolerance_<<endl;
+        if(dis < xy_goal_tolerance_ && dYaw < yaw_goal_tolerance_)
             return true;
         else
             return false;
@@ -492,22 +499,32 @@ public:
         return true;
     }
 
-    void sendNextWayPoint(){
+    void sendNextWayPoint(bool new_){
         geometry_msgs::Pose nowPose;
         nav_msgs::Path path;
 
         bool getNowPose = getNowPosition(nowPose);
-        bool getPath = getTargetPath(path,nowPose,goalList[nowGoal]);
-
+        bool getPath = false;
+        if(new_){ 
+            getPath = getTargetPath(path,nowPose,goalList[nowGoal]);
+            if(getPath)
+                cout<<GREEN<<"getPath"<<WHITE<<endl;
+            else
+                cout<<RED<<"not getPath"<<WHITE<<endl;
+        }
         geometry_msgs::PoseStamped goal;
         goal.header.frame_id = "map";
         if(getPath){
-            goal.pose = path.poses[0].pose;
+            // goal.pose = path.poses[0].pose;
+            goal.pose.position = nowPose.position;
+            goal.pose.orientation = getOrientation(path.poses[0].pose,path.poses[1].pose);
             goalPub.publish(goal);
 
-            while(!checkArrive(goal.pose)){
+            while(!checkArrive(goal.pose,xy_goal_tolerance,yaw_goal_tolerance) && ros::ok()){
                 ros::Duration(0.1).sleep();
             }
+             sendcancelCommand();
+             ros::Duration(0.1).sleep();
         }
         goal.pose = goalList[nowGoal];
 
@@ -518,6 +535,23 @@ public:
         // goal.pose = goalList[nowGoal];
 
         // goalPub.publish(goal);
+    }
+
+    geometry_msgs::Quaternion getOrientation(geometry_msgs::Pose from,geometry_msgs::Pose to){
+        double dx = to.position.x - from.position.x;
+        double dy = to.position.y - from.position.y;
+        double theta = atan2(dy,dx);
+
+        tf2::Quaternion q;
+        q.setRPY( 0, 0, theta );
+
+        geometry_msgs::Quaternion q_msg; 
+        q_msg.x = q.x();
+        q_msg.y = q.y();
+        q_msg.z = q.z();
+        q_msg.w = q.w();
+    
+        return q_msg;
     }
 
     void sendcancelCommand(){
@@ -582,6 +616,17 @@ public:
             sc.playWave(sound_path+"/cancel_target.mp3");
     }
 
+    void testPubPoint(geometry_msgs::Pose from,geometry_msgs::Pose to){
+        geometry_msgs::PoseStamped a,b;
+        a.header.frame_id = "map";
+        b.header.frame_id = "map";
+
+        a.pose = from;
+        b.pose = to;
+
+        testPub1.publish(a);
+        testPub2.publish(b);
+    }
     ros::NodeHandle n;
 
     //params
@@ -609,6 +654,9 @@ public:
     ros::Publisher goalNowPub;
     ros::Subscriber clickSub;
     ros::Subscriber joySub; 
+
+    ros::Publisher testPub1;
+    ros::Publisher testPub2;
     
     tf::TransformListener tfListener;
 

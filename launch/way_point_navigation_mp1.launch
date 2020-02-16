@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<launch>
+    <arg name="open_sound_server"            default="false" />
+
+     <!-- sound play server -->
+    <group if="$(arg open_sound_server)">
+        <node pkg="sound_play" type="soundplay_node.py" name="soundplay_node"/> 
+    </group>    
+
+    <node pkg="auto_navigation" type="way_points_navigation_node" name="way_points_navigation_node" output="screen">
+    
+        <param name="soundOpen" value="true"/>
+        <param name="map_frame_id" value="map"/>      <!--for way point assign-->
+        <param name="robot_frame_id" value="base_footprint"/>      <!--for way point assign-->
+        <param name="stopWaitingTime" value="4.0"/>   <!-- Time to wait when arriving goal -->
+        <param name="assign_new_navigation_points" value="true"/> 
+        <param name="goalsNum" value="2"/>         
+        <param name="startWithJoy" value="true"/> 
+        <param name="countDownTime" value="3.0"/> 
+        <param name="loop_count" value="-1"/>  <!-- -1 to infinite-->>
+        <param name="xy_goal_tolerance" value="0.3"/> 
+        <param name="yaw_goal_tolerance" value="0.26"/> 
+    </node>
+</launch>
+
