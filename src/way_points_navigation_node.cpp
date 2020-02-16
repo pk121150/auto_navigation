@@ -247,44 +247,13 @@ public:
                         if(stop){
                             if(!sendStopCommand){
                                 sendcancelCommand();
-                                ros::Duration(0.1).sleep();
                                 sendStopCommand = true;
                             }
-                            stuck = false;
                         }else{
-                            geometry_msgs::Pose nowPose;
-                            if(!getNowPosition(nowPose)){
-                                ros::Duration(0.1).sleep();
-                                continue;
-                            } 
-                            nav_msgs::Path path;
-                            bool getPath = false;                                
-                            getPath = getTargetPath(path,nowPose,goalList[nowGoal]);
-
-                            if(getPath)
-                            {
-                                if(stuck){
-                                    stuck = false;
-                                    if(sendStopCommand)
-                                        sendStopCommand = false;                       
-                                    sendNextWayPoint(true);
-                                }else{
-                                    if(sendStopCommand){
-                                        sendStopCommand = false;                       
-                                        sendNextWayPoint(true);
-                                    }
-                                }
-                                
-                            }else{
-                                if(!stuck){
-                                    stuck = true;
-                                    sendCanNotFindPathHelpMeSound();
-                                }
-
+                            if(sendStopCommand){
+                                sendNextWayPoint(true);
+                                sendStopCommand = false;
                             }
-                            
-                                
-                            
                         }
                     }
 
