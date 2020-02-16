@@ -35,6 +35,7 @@
 #include <string.h>
 #include <string>
 #include <cstdlib>
+#include <time.h>
 
 #define GREEN   "\033[32m"      /* Green */
 #define WHITE   "\033[37m"      /* White */
@@ -97,7 +98,7 @@ public:
         goalNowPub = n.advertise<geometry_msgs::PoseStamped>("/goalNow", 10);
         cancelPub = n.advertise<actionlib_msgs::GoalID>("/move_base/cancel", 10);
         clickSub = n.subscribe("/clicked_point", 10, &Way_Points_Navigation::clickCallback,this);
-        joySub = n.subscribe("/joy", 0, &Way_Points_Navigation::joyCallback,this);
+        joySub = n.subscribe("/joy", 10, &Way_Points_Navigation::joyCallback,this);
 
         pathClient = n.serviceClient<nav_msgs::GetPlan>("/move_base/make_plan");
 
@@ -177,6 +178,7 @@ public:
         stop = false;
         sendStopCommand = false;
         cancelGoal = false;
+        stuck = false;
         nowLoopCount = 0;
         ros::Rate loop_rate(10); 
 
@@ -246,10 +248,34 @@ public:
                                 sendStopCommand = true;
                             }
                         }else{
-                            if(sendStopCommand){
-                                sendNextWayPoint(false);
-                                sendStopCommand = false;
+                            geometry_msgs::Pose nowPose;
+                            if(!getNowPosition(nowPose)){
+                                ros::Duration(0.1).sleep();
+                                continue;
+                            } 
+                            nav_msgs::Path path;
+                            bool getPath = false;                                
+                            getPath = getTargetPath(path,nowPose,goalList[nowGoal]);
+
+                            if(getPath)
+                            {
+                                if(stuck){
+                                    stuck = false;
+                                    if(sendStopCommand)
+                                        sendStopCommand = false;                       
+                                    sendNextWayPoint(true);
+                                }
+                                
+                            }else{
+                                if(!stuck){
+                                    stuck = true;
+                                    sendCanNotFindPathHelpMeSound();
+                                }
+
                             }
+                            
+                                
+                            
                         }
                     }
 
@@ -506,7 +532,11 @@ public:
         bool getNowPose = getNowPosition(nowPose);
         bool getPath = false;
         if(new_){ 
+            double START,END;
+            START = clock();
             getPath = getTargetPath(path,nowPose,goalList[nowGoal]);
+            END = clock();
+            ROS_INFO("Time for find path : %lf S",(END - START) / CLOCKS_PER_SEC);
             if(getPath)
                 cout<<GREEN<<"getPath"<<WHITE<<endl;
             else
@@ -517,11 +547,16 @@ public:
         if(getPath){
             // goal.pose = path.poses[0].pose;
             goal.pose.position = nowPose.position;
-            goal.pose.orientation = getOrientation(path.poses[0].pose,path.poses[1].pose);
+            if(path.poses.size() > 2)
+                goal.pose.orientation = getOrientation(path.poses[0].pose,path.poses[2].pose);
+            else
+                goal.pose.orientation = path.poses[0].pose.orientation;
             goalPub.publish(goal);
 
-            while(!checkArrive(goal.pose,xy_goal_tolerance,yaw_goal_tolerance) && ros::ok()){
+            int count = 0; 
+            while(!checkArrive(goal.pose,xy_goal_tolerance,yaw_goal_tolerance) && ros::ok() && count < 50){
                 ros::Duration(0.1).sleep();
+                count++;
             }
              sendcancelCommand();
              ros::Duration(0.1).sleep();
@@ -616,6 +651,11 @@ public:
             sc.playWave(sound_path+"/cancel_target.mp3");
     }
 
+    void sendCanNotFindPathHelpMeSound(){
+        if(soundOpen)
+            sc.playWave(sound_path+"/can_not_find_path_help_me.mp3");
+    }
+
     void testPubPoint(geometry_msgs::Pose from,geometry_msgs::Pose to){
         geometry_msgs::PoseStamped a,b;
         a.header.frame_id = "map";
@@ -644,6 +684,7 @@ public:
     bool stop;
     bool sendStopCommand;
     bool cancelGoal;
+    bool stuck;
 
     int nowGoal;
     int nowLoopCount;
