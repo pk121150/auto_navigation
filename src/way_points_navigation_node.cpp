@@ -200,15 +200,20 @@ public:
                         }else{
                             stuck = false;
                             firstGoal = false;
+                            showGoMsg();
+                            sendStartSound();
                             ROS_INFO("   GO TO FIRST GOAL !!");
                         }
                     }else{
                         if(!success){
                             stuck = true;
                             sendCanNotFindPathHelpMeSound();
+                            ROS_WARN("   STUCK !!!!!!");
                             ros::Duration(1).sleep();
                         }else{
                             firstGoal = false;
+                            showGoMsg();
+                            sendStartSound();
                             ROS_INFO("   GO TO FIRST GOAL !!");
                         }
                     }
@@ -256,23 +261,79 @@ public:
                         }
                     
                         if(!stop){
-                            sendGoToNextTargetdSound();
-                            ROS_INFO("   GO TO NEXT GOAL !!");
-                            sendNextWayPoint();
+                            bool success;
+                            success = sendNextWayPoint();
+                            if(success)
+                            {
+                                sendGoToNextTargetdSound();
+                                ROS_INFO("   GO TO NEXT GOAL !!");
+                                 stuck = false;
+                            }else{
+                                sendCanNotFindPathHelpMeSound();
+                                ROS_WARN("   STUCK !!!!!!");
+                                stuck = true;
+                            }
                         }
                         cancelGoal = false;
+                       
                     }else{
                         // check whether send stop command
                         if(stop){
                             if(!sendStopCommand){
-                                sendcancelCommand();
-                                sendStopCommand = true;
+                                if(stuck){
+                                    sendStopCommand = true;
+                                }
+                                else{
+                                    sendcancelCommand();
+                                    sendStopCommand = true;
+                                }
+                                sendPausePerformingTaskSound();     
+                                ROS_INFO("   STOP PERFORMING TASK FOR A MOMENT !!");
+                            }else{
+                                if(stuck){
+                                    ;
+                                }
+                                else{
+                                    ;
+                                }
                             }
                         }else{
-                            if(sendStopCommand){
-                                sendNextWayPoint();
+
+                            if(sendStopCommand || stuck)
+                            {
+                                
+                                bool success = sendNextWayPoint();
+                                if(success)
+                                {
+                                    sendContinueToPerformTaskSound();
+                                    ROS_INFO("   GO TO NEXT GOAL !!"); 
+                                    stuck = false;
+                                }else{
+                                    
+                                    if(!stuck || sendStopCommand){
+                                        sendCanNotFindPathHelpMeSound();
+                                        ROS_WARN("   STUCK !!!!!!");                                          
+                                    }    
+                                    stuck = true; 
+                                }
                                 sendStopCommand = false;
                             }
+                            
+                                
+                            
+                            
+                            // if(success){
+
+                            // }
+                            // if(!stuck){
+                                
+                            // }else{
+
+                            // }
+                            // if(sendStopCommand){
+                            //     sendNextWayPoint();
+                            //     sendStopCommand = false;
+                            // }
                         }
                     }
 
@@ -337,8 +398,8 @@ public:
         {
             if(getNavigationPoint)
             {
-                showGoMsg();
-                sendStartSound();
+                //showGoMsg();
+                //sendStartSound();
                 startNavigation = true;
             }else{
                 ROS_WARN("Please set way points first !!");
@@ -351,12 +412,10 @@ public:
             if(stop)
             {
                 stop = false;
-                sendContinueToPerformTaskSound();
-                ROS_INFO("   GO TO NEXT GOAL !!");              
+                             
             }else{
                 stop = true;
-                sendPausePerformingTaskSound();     
-                ROS_INFO("   STOP PERFORMING TASK FOR A MOMENT !!");
+                
             }
         }
 
