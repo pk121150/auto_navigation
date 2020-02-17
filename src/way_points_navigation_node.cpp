@@ -525,10 +525,16 @@ public:
         if(getPath){
             // goal.pose = path.poses[0].pose;
             goal.pose.position = nowPose.position;
-            if(path.poses.size() > 2)
+            if(path.poses.size() > 0)
                 goal.pose.orientation = getOrientation(path.poses[0].pose,path.poses[2].pose);
-            else
-                goal.pose.orientation = path.poses[0].pose.orientation;
+            // else
+            //     goal.pose.orientation = path.poses[0].pose.orientation;
+            else{
+                cout << "STUCK" <<endl;
+                ros::Duration(0.1).sleep();
+                return;
+
+            }
             goalPub.publish(goal);
 
             int count = 0; 
@@ -540,7 +546,6 @@ public:
              ros::Duration(0.1).sleep();
         }
         goal.pose = goalList[nowGoal];
-
         goalPub.publish(goal);
 
         // geometry_msgs::PoseStamped goal;
